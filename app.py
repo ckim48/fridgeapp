@@ -1,5 +1,5 @@
 import os
-from flask import Flask, render_template, request, redirect, url_for, session
+from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify
 from werkzeug.utils import secure_filename
 import sqlite3
 from datetime import datetime
@@ -34,7 +34,6 @@ def init_db():
 
 from datetime import datetime, timedelta
 
-
 @app.route('/')
 def index():
     with sqlite3.connect('fridge.db') as conn:
@@ -42,19 +41,76 @@ def index():
         items = conn.execute("SELECT * FROM fridge_items WHERE status='in' AND username=?",
                              (session.get('user'),)).fetchall()
 
-    # Find soon-to-expire items
     today = datetime.today()
-    soon_expiring = [item for item in items if
-                     datetime.strptime(item['expiration_date'], "%Y-%m-%d") <= today + timedelta(days=2)]
+    soon_expiring_ids = {item['id'] for item in items
+                         if today <= datetime.strptime(item['expiration_date'], "%Y-%m-%d") <= today + timedelta(days=2)}
 
-    # List of all food names in fridge
-    fridge_names = [item['name'].lower() for item in items]
+    expired_ids = {item['id'] for item in items
+                   if datetime.strptime(item['expiration_date'], "%Y-%m-%d") < today}
 
-    number = len(fridge_names)
+    number = len(items)
+    return render_template("index.html", items=items,
+                           soon_expiring_ids=soon_expiring_ids,
+                           expired_ids=expired_ids,
+                           number=number)
+@app.route('/shopping-list')
+def shopping_list():
+    if 'user' not in session:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    today = datetime.today()
+    soon = today + timedelta(days=2)
+
+    with sqlite3.connect('fridge.db') as conn:
+        conn.row_factory = sqlite3.Row
+        items = conn.execute("SELECT * FROM fridge_items WHERE status='in' AND username=?", (session['user'],)).fetchall()
+
+    expired = []
+    expiring_soon = []
+    for item in items:
+        name = item['name']
+        quantity = item['quantity'] or 1
+        try:
+            quantity = int(quantity)
+        except:
+            quantity = 1
+
+        try:
+            expiration = datetime.strptime(item['expiration_date'], "%Y-%m-%d")
+        except:
+            continue
+
+        if expiration < today:
+            expired.append(f"{name} (qty: {quantity}, expired on {expiration.date()})")
+        elif expiration <= soon:
+            expiring_soon.append(f"{name} (qty: {quantity}, expires on {expiration.date()})")
+
+    # Optional GPT Suggestion
+    gpt_suggestions = [f"Consider buying more of {i.split()[0]}" for i in expired + expiring_soon]
+
+    return jsonify({
+        'expired': expired,
+        'expiring_soon': expiring_soon,
+        'gpt_list': gpt_suggestions
+    })
 
 
 
-    return render_template("index.html", items=items, soon_expiring=soon_expiring, number = number)
+@app.route('/edit', methods=['POST'])
+def edit_item():
+    item_id = request.form['id']
+    name = request.form['name']
+    expiration = request.form['expiration']
+    quantity = request.form['quantity']
+
+    with sqlite3.connect('fridge.db') as conn:
+        conn.execute('''
+            UPDATE fridge_items
+            SET name=?, expiration_date=?, quantity=?
+            WHERE id=? AND username=?
+        ''', (name, expiration, quantity, item_id, session.get('user')))
+    return '', 204  # No Content
+
 @app.route('/logout', methods=['GET'])
 def logout():
     session.clear()
@@ -110,42 +166,26 @@ def chat():
     return {"reply": content}
 
 
+@app.route("/add", methods=["POST"])
+def add_item():
+    if 'user' not in session:
+        return redirect("/login")
 
-@app.route('/add', methods=['POST'])
-def add():
-    print("Called")
-    name = request.form['name']
-    expiration_date = request.form['expiration']
-    image = request.files['image']
-    filename = secure_filename(image.filename)
-    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-    image.save(filepath)
+    name = request.form["name"]
+    expiration = request.form["expiration"]
+    quantity = request.form.get("quantity", 1)
+    username = session["user"]
 
-    with sqlite3.connect('fridge.db') as conn:
+    with sqlite3.connect("fridge.db") as conn:
         conn.execute(
-            "INSERT INTO fridge_items (name, image_path, expiration_date, status, username) VALUES (?, ?, ?, 'in', ?)",
-            (name, filepath, expiration_date, session.get('user')))
+            "INSERT INTO fridge_items (name, expiration_date, quantity, status, username) VALUES (?, ?, ?, ?, ?)",
+            (name, expiration, quantity, 'in', username)
+        )
+        conn.commit()
 
-        items = conn.execute("SELECT * FROM fridge_items WHERE status='in'").fetchall()
+    flash("Item added successfully!", "success")
+    return redirect(url_for("index"))
 
-    if not items:
-        return "<div class='empty-state'><p>Your fridge is currently empty.</p></div>"
-
-    html = ""
-    for item in items:
-        html += f"""
-        <div class='col-md-6 mb-3'>
-          <div class='card shadow-sm'>
-            <img src='{item[2]}' class='card-img-top' style='height:200px; object-fit:cover;'>
-            <div class='card-body'>
-              <h5 class='card-title'>{item[1]}</h5>
-              <p>Expires on: {item[3]}</p>
-              <a href='/take_out/{item[0]}' class='btn btn-warning w-100'>Take Out</a>
-            </div>
-          </div>
-        </div>
-        """
-    return html
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():

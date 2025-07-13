@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Fridge Tracker</title>
+  <title>FridgeWise</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet" />
@@ -148,6 +148,17 @@
       animation: pulse 1.2s infinite;
       color: #d62828;
     }
+    .expiring-badge {
+  background: #ffcc00;
+  color: #222;
+  font-weight: bold;
+  font-size: 0.75rem;
+  padding: 4px 8px;
+  border-radius: 12px;
+  position: absolute;
+  top: 0.5rem;
+  left: 0.5rem;
+}
 
     @keyframes pulse {
       0% { transform: scale(1); opacity: 1; }
@@ -188,6 +199,9 @@
   transform: translateY(-2px);
   box-shadow: 0 6px 12px rgba(0, 0, 0, 0.1);
 }
+.card.border-danger {
+  opacity: 0.75;
+}
 
   </style>
 </head>
@@ -195,7 +209,7 @@
 <nav class="navbar navbar-dark bg-dark mb-4 shadow px-3" style="background-color: #003049 !important;">
   <div class="container-fluid d-flex justify-content-between align-items-center">
     <a class="navbar-brand fw-bold" href="/" style="font-size: 1.5rem;">
-      <i class="bi bi-snow2 me-2"></i>Fridge Tracker
+      <i class="bi bi-snow2 me-2"></i>FridgeWise
     </a>
     {% if session.get('user') %}
       <a href="/logout" class="btn btn-outline-light rounded-pill">
@@ -257,29 +271,65 @@
         <div class="col-md-7">
           <div class="section-card">
             <div class="section-title"><i class="bi bi-box-fill"></i>Fridge Contents ({{number}} Items) </div>
-            <div class="row" id="fridge-items">
-              {% if items %}
-                {% for item in items %}
-                <div class="col-md-4 mb-4">
-                  <div class="card shadow-sm">
-                    <img src="{{ item[2] }}" class="card-img-top" style="height:200px; object-fit:cover;">
-                    <div class="card-body">
-                      <h5 class="card-title">{{ item[1] }}</h5>
-                      <p class="text-muted" style="font-size:0.9rem !important;"><i class="bi bi-calendar-event me-1"></i>Expires on: {{ item[3] }}</p>
-                      <a href="/take_out/{{ item[0] }}" class="btn takeout-btn w-100">
-                        <i class="bi bi-box-arrow-left me-1"></i> Take Out
-                      </a>
-                    </div>
-                  </div>
-                </div>
-                {% endfor %}
-              {% else %}
-                <div class="empty-state">
-                  <i class="bi bi-box-seam"></i>
-                  <p class="mt-2">Your fridge is currently empty.</p>
-                </div>
-              {% endif %}
-            </div>
+<!-- Sorting buttons -->
+<div class="mb-3 d-flex gap-2">
+  <button class="btn btn-outline-dark btn-sm filter-btn" data-sort-by="name">Sort by Name</button>
+  <button class="btn btn-outline-dark btn-sm filter-btn" data-sort-by="quantity">Sort by Quantity</button>
+  <button class="btn btn-outline-dark btn-sm filter-btn" data-sort-by="date">Sort by Expiration</button>
+</div>
+
+<!-- Items container -->
+<div class="row" id="fridge-items">
+  {% if items %}
+    {% for item in items %}
+    <div class="col-md-4 mb-4 fridge-item"
+         data-name="{{ item[1]|lower }}"
+         data-quantity="{{ item[7]|int }}"
+         data-date="{{ item[3] }}">
+    <div class="card shadow-sm
+      {% if item[0] in expired_ids %}border-danger border-3
+      {% elif item[0] in soon_expiring_ids %}border-warning border-3
+      {% endif %}">
+
+        <div class="card-body position-relative">
+          <a href="#" class="position-absolute top-0 end-0 m-2 text-muted"
+             data-bs-toggle="modal" data-bs-target="#editItemModal"
+             data-id="{{ item[0] }}"
+             data-name="{{ item[1] }}"
+             data-expiration="{{ item[3] }}"
+             data-quantity="{{ item[7] }}"
+             title="Edit">
+            <i class="bi bi-pencil-fill fs-5"></i>
+          </a>
+          {% if item[0] in expired_ids %}
+            <span class="badge bg-danger text-light position-absolute top-0 start-0 m-2">Expired</span>
+          {% elif item[0] in soon_expiring_ids %}
+            <span class="badge bg-warning text-dark position-absolute top-0 start-0 m-2">Expiring Soon</span>
+          {% endif %}
+
+
+          <h5 class="card-title mt-4">{{ item[1]|title }}</h5>
+          <p class="text-muted mb-1" style="font-size:0.85rem;">
+            <i class="bi bi-basket me-1"></i>Qty: {{ item[7] }}
+          </p>
+          <p class="text-muted" style="font-size:0.9rem !important;">
+            <i class="bi bi-calendar-event me-1"></i>Expires on: {{ item[3] }}
+          </p>
+          <a href="/take_out/{{ item[0] }}" class="btn takeout-btn w-100">
+            <i class="bi bi-box-arrow-left me-1"></i> Take Out
+          </a>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  {% else %}
+    <div class="empty-state">
+      <i class="bi bi-box-seam"></i>
+      <p class="mt-2">Your fridge is currently empty.</p>
+    </div>
+  {% endif %}
+</div>
+
           </div>
         </div>
       </div>
@@ -287,6 +337,12 @@
   </div>
 
 </div>
+<!-- Floating Shopping List Button -->
+<button class="btn btn-warning rounded-circle shadow-lg position-fixed"
+        style="bottom: 100px; right: 30px; width: 60px; height: 60px; z-index: 1050;"
+        id="shoppingListBtn">
+  <i class="bi bi-cart-check fs-4"></i>
+</button>
 
 <!-- Floating Add Button -->
 <button class="btn btn-dark rounded-circle shadow-lg position-fixed"
@@ -294,6 +350,24 @@
         data-bs-toggle="modal" data-bs-target="#addItemModal">
   <i class="bi bi-plus-lg fs-4"></i>
 </button>
+<!-- Shopping List Modal -->
+<!-- Shopping List Modal -->
+<div class="modal fade" id="shoppingListModal" tabindex="-1" aria-labelledby="shoppingListModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-scrollable modal-lg">
+    <div class="modal-content rounded-4">
+      <div class="modal-header bg-warning text-dark rounded-top-4">
+        <h5 class="modal-title" id="shoppingListModalLabel">
+          <i class="bi bi-cart-check me-2"></i>Smart Shopping List
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="shopping-list-body">
+        <p class="text-muted">Loading...</p>
+      </div>
+    </div>
+  </div>
+</div>
+
 
 <!-- Add Item Modal -->
 <div class="modal fade" id="addItemModal" tabindex="-1" aria-labelledby="addItemModalLabel" aria-hidden="true">
@@ -304,14 +378,15 @@
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body">
-        <form id="add-item-form" enctype="multipart/form-data">
-          <input type="text" name="name" id="name-input" class="form-control mb-2" placeholder="Food name..." required>
-          <input type="date" name="expiration" class="form-control mb-2" required>
-          <input type="file" name="image" class="form-control mb-3" required>
-          <button type="submit" class="btn btn-dark w-100">
-            <i class="bi bi-plus-circle me-1"></i> Add to Fridge
-          </button>
-        </form>
+<form action="/add" method="POST" enctype="multipart/form-data">
+  <input type="text" name="name" class="form-control mb-2" placeholder="Food name..." required>
+  <input type="date" name="expiration" class="form-control mb-2" required>
+  <input type="number" name="quantity" class="form-control mb-3" placeholder="Quantity" required>
+  <button type="submit" class="btn btn-dark w-100">
+    <i class="bi bi-plus-circle me-1"></i> Add to Fridge
+  </button>
+</form>
+
       </div>
     </div>
   </div>
@@ -323,6 +398,26 @@
         Item successfully added to fridge!
       </div>
       <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+    </div>
+  </div>
+</div>
+<!-- Edit Item Modal -->
+<div class="modal fade" id="editItemModal" tabindex="-1" aria-labelledby="editItemModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content rounded-4">
+      <div class="modal-header bg-dark text-white rounded-top-4">
+        <h5 class="modal-title" id="editItemModalLabel"><i class="bi bi-pencil-square me-2"></i>Edit Fridge Item</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <form id="edit-item-form">
+          <input type="hidden" name="id" id="edit-id">
+          <input type="text" name="name" id="edit-name" class="form-control mb-2" placeholder="Food name" required>
+          <input type="date" name="expiration" id="edit-expiration" class="form-control mb-2" required>
+          <input type="number" name="quantity" id="edit-quantity" class="form-control mb-3" placeholder="Quantity" required>
+          <button type="submit" class="btn btn-dark w-100">Update Item</button>
+        </form>
+      </div>
     </div>
   </div>
 </div>
@@ -361,35 +456,7 @@ addForm?.addEventListener("submit", async function (e) {
   toast.show();
 });
 
-   chatForm?.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const message = userInput.value.trim();
-    if (!message) return;
 
-    chatLog.innerHTML += `<div class="user-bubble">${message}</div>`;
-    userInput.value = "";
-    chatLog.scrollTop = chatLog.scrollHeight;
-
-    const typingBubble = document.createElement("div");
-    typingBubble.className = "typing-indicator";
-    typingBubble.textContent = "FridgeBot is thinking";
-    chatLog.appendChild(typingBubble);
-    chatLog.scrollTop = chatLog.scrollHeight;
-
-    const res = await fetch("/chat", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({ message })
-    });
-
-    const data = await res.json();
-
-    typingBubble.remove();
-    chatLog.innerHTML += `<div class="bot-bubble">${data.reply}</div>`;
-    chatLog.scrollTop = chatLog.scrollHeight;
-  });
 </script>
 <script>
   const micBtn = document.getElementById("mic-btn");
@@ -430,6 +497,104 @@ addForm?.addEventListener("submit", async function (e) {
 </script>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+const editModal = document.getElementById("editItemModal");
+editModal.addEventListener("show.bs.modal", function (event) {
+  const button = event.relatedTarget;
+  const id = button.getAttribute("data-id");
+  const name = button.getAttribute("data-name");
+  const expiration = button.getAttribute("data-expiration");
+  const quantity = button.getAttribute("data-quantity");
+
+  document.getElementById("edit-id").value = id;
+  document.getElementById("edit-name").value = name;
+  document.getElementById("edit-expiration").value = expiration;
+  document.getElementById("edit-quantity").value = quantity;
+});
+document.getElementById("edit-item-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+
+  const formData = new FormData(e.target);
+  const res = await fetch("/edit", {
+    method: "POST",
+    body: formData
+  });
+
+  if (res.ok) {
+    location.reload();
+  }
+});
+</script>
+<script src="https://unpkg.com/isotope-layout@3/dist/isotope.pkgd.min.js"></script>
+<script>
+  document.addEventListener("DOMContentLoaded", () => {
+    const iso = new Isotope("#fridge-items", {
+      itemSelector: ".fridge-item",
+      layoutMode: "fitRows",
+      getSortData: {
+        name: '[data-name]',
+        quantity: '[data-quantity] parseInt',
+        date: '[data-date]'
+      }
+    });
+
+    document.querySelectorAll(".filter-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const sortBy = btn.getAttribute("data-sort-by");
+        iso.arrange({ sortBy });
+      });
+    });
+  });
+</script>
+<script>
+document.getElementById("shoppingListBtn").addEventListener("click", async () => {
+  const modalBody = document.getElementById("shopping-list-body");
+  modalBody.innerHTML = "<p class='text-muted'>Loading shopping list...</p>";
+
+  const res = await fetch("/shopping-list");
+  if (res.ok) {
+    const data = await res.json();
+    let html = "";
+
+    if (data.expired.length > 0) {
+      html += "<h6 class='text-danger'>Expired Items</h6><ul class='list-group mb-3'>";
+      data.expired.forEach(item => {
+        html += `<li class='list-group-item'><i class="bi bi-exclamation-circle me-1 text-danger"></i>${item}</li>`;
+      });
+      html += "</ul>";
+    }
+
+    if (data.expiring_soon.length > 0) {
+      html += "<h6 class='text-warning'>Expiring Soon</h6><ul class='list-group mb-3'>";
+      data.expiring_soon.forEach(item => {
+        html += `<li class='list-group-item'><i class="bi bi-hourglass-split me-1 text-warning"></i>${item}</li>`;
+      });
+      html += "</ul>";
+    }
+
+    if (data.gpt_list.length > 0) {
+      html += "<h6 class='text-primary'>Suggestions</h6><ul class='list-group'>";
+      data.gpt_list.forEach(item => {
+        html += `<li class='list-group-item'><i class="bi bi-lightbulb me-1 text-primary"></i>${item}</li>`;
+      });
+      html += "</ul>";
+    }
+
+    if (html === "") {
+      html = "<p class='text-muted'>Your fridge is well-stocked!</p>";
+    }
+
+    modalBody.innerHTML = html;
+  } else {
+    modalBody.innerHTML = "<p class='text-danger'>Failed to load shopping list.</p>";
+  }
+
+  const modal = new bootstrap.Modal(document.getElementById("shoppingListModal"));
+  modal.show();
+});
+
+</script>
+
 
 </body>
 </html>
